@@ -61,9 +61,7 @@ async function sendNotification(courier, url, label, textToMatch) {
   return requestId;
 }
 
-// Use this http endpoint while testing to make sure the checker is functioning
-// as normal, the code in here should be the same as the pubsub function
-exports.testChecker = functions.https.onRequest(async (request, response) => {
+async function checkWebsites() {
   const courier = CourierClient({ authorizationToken: process.env.COURIER_API_KEY });
 
   const websitesRef = db.collection("websites");
@@ -93,6 +91,12 @@ exports.testChecker = functions.https.onRequest(async (request, response) => {
       functions.logger.info(`Sent notification with ID ${notificationId}`);
     }
   });
+}
+
+// Use this http endpoint while testing to make sure the checker is functioning
+// as normal, the code in here should be the same as the pubsub function
+exports.testChecker = functions.https.onRequest(async (request, response) => {
+  await checkWebsites();
 
   response.send({ success: true })
 });
@@ -123,33 +127,5 @@ exports.runChecker = functions.runWith({ memory: "1GB" }).pubsub
   .onRun(async () => {
     functions.logger.info("Started checker execution");
 
-    const courier = CourierClient({ authorizationToken: process.env.COURIER_API_KEY });
-
-    const websitesRef = db.collection("websites");
-    const snapshot = await websitesRef.get();
-
-    snapshot.forEach(async (doc) => {
-      const docData = doc.data();
-      const url = docData.url;
-      const xpath = docData.xpath;
-      const textToMatch = docData.textToMatch;
-      const change = docData.change;
-      const label = docData.label;
-
-      functions.logger.info(`Checking ${url} for a match, job label: ${label}`)
-      const checkResult = await checkWebsite(url, xpath, textToMatch);
-
-      if (change !== checkResult.change) {
-        // update the document to the new result change
-        const docRef = websitesRef.doc(doc.id);
-        await docRef.update({ change: checkResult.change });
-        functions.logger.info(`A change has been detected for ${url}, job label: ${label}`);
-
-        // send notification
-        const notificationId = await sendNotification(courier, url, label);
-        functions.logger.info(`Sent notification with ID ${notificationId}`);
-      }
-    });
-
-    functions.logger.info("Ended checker execution");
+    await checkWebsites();
   });
